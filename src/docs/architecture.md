@@ -1,20 +1,23 @@
 # Архитектура системы
 
-Цель: описать top‑level архитектуру и сетевую связность сервисов/микросервисов (требование «2 балла» из QAP), а также внутреннюю архитектуру iOS‑клиента на базе `src/app/mad_application`.
+Цель: описать top‑level архитектуру и сетевую связность сервисов/микросервисов (требование «2 балла» из QAP) для кейса «мобильный клиент → домашний ПК с Ollama через VPS + AmneziaWG», а также внутреннюю архитектуру iOS‑клиента на базе `src/app/mad_application`.
 
 ## 1. Контекст (C4: System Context)
 
 ```mermaid
 flowchart LR
   User[Пользователь] --> iOS[iOS App (SwiftUI)]
-  iOS --> API[Backend API Gateway / BFF]
-  API --> Auth[Auth Service]
-  API --> Core[Core Service (Домен X)]
-  Core --> DB[(DB)]
-  API --> Feedback[Feedback Service]
+  iOS --> VPS[VPS (public IP)]
+  VPS --> Edge[Edge Reverse Proxy\n(Caddy/Nginx)]
+  VPS --> AWG[AmneziaWG Server\n(WireGuard)]
+  Home[Домашний ПК] --> AWG
+  Edge --> GW[Home Gateway / BFF\n(через WG tunnel)]
+  GW --> Ollama[Ollama (LLM runtime)]
+  GW --> Auth[Auth / Pairing]
+  GW --> Feedback[Feedback endpoint (optional)]
   iOS --> Analytics[Analytics SDK/Service]
   iOS --> Crash[Crash Monitoring (Sentry/Crashlytics)]
-  API --> OTel[OpenTelemetry Collector]
+  GW --> OTel[OpenTelemetry Collector]
   OTel --> Prom[Prometheus]
   Prom --> Grafana[Grafana Dashboards]
   OTel --> Logs[Logs (Loki/ELK)]
@@ -23,16 +26,17 @@ flowchart LR
 
 Примечания:
 
-- Если backend реализован как монолит, блоки `Auth/Core/Feedback` могут быть модулями внутри одного сервиса, но на диаграмме они сохранены как логические контейнеры (для демонстрации связности).
+- Ollama и домашний gateway не открываются в интернет: наружу публикуется только VPS (TLS), а до дома трафик идет через WireGuard (AmneziaWG).
+- Edge reverse proxy на VPS завершает TLS и проксирует трафик к домашнему gateway по WG‑интерфейсу.
 - Для учебного проекта допускается замена `Analytics/Crash` на SaaS‑решение; важно, чтобы выбранный инструмент и метрики были явно зафиксированы.
 
 ## 2. Контейнеры (C4: Containers) и протоколы
 
-- iOS App → API: HTTPS (JSON), TLS, таймауты/ретраи.
-- API → Auth/Core/Feedback: HTTP/gRPC внутри сети (по выбору), mTLS при необходимости.
-- Core → DB: SQL.
-- Backend → Observability: OTLP (gRPC/HTTP) в OpenTelemetry Collector.
-- Prometheus → Backend: pull‑scrape `/metrics` (или через collector).
+- iOS App → VPS Edge: HTTPS + TLS; streaming (SSE/WebSocket) при необходимости.
+- VPS Edge → Home Gateway: HTTP(S) поверх WireGuard tunnel (WG интерфейс); доступ ограничен firewall'ом.
+- Home Gateway → Ollama: HTTP (loopback/локальная сеть на домашнем ПК).
+- Home Gateway → Observability: OTLP (gRPC/HTTP) в OpenTelemetry Collector.
+- Prometheus → Home Gateway: pull‑scrape `/metrics` (или через collector).
 
 ## 3. Внутренняя архитектура iOS‑клиента (слои)
 
@@ -68,7 +72,7 @@ flowchart TB
 
 ## 4. Основные потоки данных (пример)
 
-### 4.1. Загрузка списка (UC‑03)
+### 4.1. Отправка промпта и streaming ответа (UC‑04)
 
 ```mermaid
 sequenceDiagram
@@ -77,59 +81,61 @@ sequenceDiagram
   participant VM as ViewModel
   participant UC as UseCase
   participant R as Repository
-  participant L as Local Cache
-  participant N as API (Remote)
+  participant G as Home Gateway
+  participant O as Ollama
 
-  U->>V: Открывает список
-  V->>VM: onAppear
-  VM->>UC: loadList()
-  UC->>R: getList()
-  R->>L: readCached()
-  L-->>R: cached data (optional)
-  R-->>UC: cached result
-  UC-->>VM: state=content (cached)
-  R->>N: fetchRemote()
-  N-->>R: 200 + payload
-  R->>L: writeCache()
-  R-->>UC: fresh result
-  UC-->>VM: state=content (fresh)
+  U->>V: Открывает чат
+  V->>VM: send(prompt)
+  VM->>UC: sendPrompt(prompt, model)
+  UC->>R: streamCompletion(prompt, model)
+  R->>G: POST /chat (stream)
+  G->>O: /api/chat (stream)
+  O-->>G: tokens (stream)
+  G-->>R: tokens (stream)
+  R-->>UC: tokens (stream)
+  UC-->>VM: update UI incrementally
+  VM-->>V: streaming text
 ```
 
-### 4.2. Ошибка сети (degradation)
+### 4.2. Ошибка сети / stop generation (degradation)
 
-- При `timeout`/`no connection`: показывать кэш (если есть) + non-blocking баннер «Нет сети».
-- При `401`: перевести в flow re-auth (без циклических ретраев).
-- При `5xx`: предложить Retry + отправить событие ошибки в telemetry (без PII).
+- При `timeout`/`no connection`: показать понятную причину (VPN/домашний ПК недоступен) + Retry.
+- При `401/403`: инициировать перепривязку/pairing (без циклических ретраев).
+- При `429`: показать подсказку о лимитах; увеличить backoff.
+- Stop generation: клиент отменяет стрим; gateway пробрасывает cancel/close upstream.
 
 ## 5. Развертывание (вариант для «2 балла»)
 
-Вариант с контейнерами (учебный стенд):
+Вариант с контейнерами на домашнем ПК (учебный стенд), показывающий сетевую связность:
 
 ```mermaid
 flowchart LR
-  subgraph Cluster[Docker/VM]
-    API[api-gateway]
-    Auth[auth-service]
-    Core[core-service]
-    FB[feedback-service]
-    DB[(postgres)]
-    OTel[otel-collector]
+  subgraph VPS[VPS (Docker)]
+    Edge[edge-proxy (caddy/nginx)]
+    AWG[amnezia-wg (server)]
+    OTelV[otel-collector (optional)]
     Prom[prometheus]
     Graf[grafana]
     Loki[loki]
   end
 
-  API --> Auth
-  API --> Core
-  API --> FB
-  Core --> DB
-  API --> OTel
-  Auth --> OTel
-  Core --> OTel
-  FB --> OTel
+  subgraph Home[Home PC]
+    BFF[home-gateway]
+    Auth[auth/pairing]
+    Ollama[ollama]
+    FB[feedback (optional)]
+  end
+
+  BFF --> Auth
+  BFF --> Ollama
+  BFF --> FB
+  BFF --> OTelV
+  Auth --> OTelV
+  FB --> OTelV
+  Edge --> BFF
+  AWG --- BFF
   Prom --> Graf
-  OTel --> Loki
+  OTelV --> Loki
 ```
 
 Даже если фактически часть компонентов не разворачивается, эта схема демонстрирует понимание сетевой топологии и observability.
-

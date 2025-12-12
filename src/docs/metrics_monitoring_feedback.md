@@ -10,9 +10,11 @@
 
 - Key metric (пример): **Crash‑free sessions (%)** для iOS клиента.
 - Вспомогательные:
-  - API error rate (5xx/4xx) по endpoint’ам.
-  - p95 latency по ключевым запросам (list/details).
-  - Доля успешных завершений ключевого сценария (success rate UC‑05).
+  - API error rate (5xx/4xx/429) по endpoint’ам gateway.
+  - p95 TTFT и p95 полного ответа по UC‑04 (чат).
+  - Доля успешных завершений ключевого сценария (success rate UC‑04).
+  - Доля отмен (cancel rate) и повторов (retry rate).
+  - WireGuard tunnel health: uptime, handshake age, packet loss/latency (если доступно).
 
 Инструменты мониторинга (примерный набор):
 
@@ -23,7 +25,7 @@
 ### 1.2. Производительность
 
 - Cold start p50/p95.
-- Время загрузки экрана списка/деталей (p50/p95).
+- TTFT (p50/p95) и полное время ответа (p50/p95) в чате.
 - Размер ответов API и объем трафика за сессию.
 
 ### 1.3. UX/продукт
@@ -35,15 +37,18 @@
 
 ## 2. Дашборды и алерты (минимум)
 
-- Dashboard‑1: API health — RPS, error rate, p95 latency.
-- Dashboard‑2: DB health — connections, slow queries (если доступно).
-- Dashboard‑3: Mobile stability — crash‑free sessions, топ ошибок.
+- Dashboard‑1: Home Gateway health — RPS, error rate, p95 latency/TTFT, активные стримы.
+- Dashboard‑2: Ollama host — CPU/RAM/VRAM, температура/троттлинг (если доступно), загрузка диска.
+- Dashboard‑3: Mobile stability — crash‑free sessions, топ ошибок, TTFT по устройствам/сетям.
+- Dashboard‑4: VPS/WireGuard — handshake age, трафик, доступность edge, 4xx/5xx на публичном прокси.
 
 Алерты (пример):
 
 - Error rate > T% за 5 минут.
-- p95 latency > X ms за 10 минут.
+- p95 TTFT > X ms за 10 минут.
+- Доля 401/403 растет (проблемы с токеном/pairing).
 - Crash‑free sessions < Y% за сутки.
+- WireGuard handshake отсутствует > N минут (домашний ПК недоступен).
 
 ## 3. Сбор обратной связи (CSI/NPS)
 
@@ -73,4 +78,3 @@
 - Скриншоты дашбордов (Grafana/Crash tool).
 - Пример алерта и его разбор.
 - Короткий отчет «до/после» по 1–2 метрикам.
-

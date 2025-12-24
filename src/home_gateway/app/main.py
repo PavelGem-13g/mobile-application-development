@@ -60,12 +60,21 @@ _request_latency_count: Dict[tuple[str, str], int] = defaultdict(int)
 _client_counts: Dict[tuple[str, str], int] = defaultdict(int)
 _client_latency_sum_ms: Dict[str, float] = defaultdict(float)
 _client_latency_count: Dict[str, int] = defaultdict(int)
+_feedback_entries: list[dict[str, Any]] = []
+_feedback_limit = 200
 
 
 class ClientMetricEvent(BaseModel):
     event: str
     duration_ms: float | None = None
     status: str = Field(default="ok")
+    timestamp: str | None = None
+
+
+class FeedbackPayload(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = None
+    scenario: str = Field(default="unknown")
     timestamp: str | None = None
 
 
@@ -77,6 +86,7 @@ def _metrics_snapshot() -> dict[str, Any]:
         "client_counts": dict(_client_counts),
         "client_latency_sum_ms": dict(_client_latency_sum_ms),
         "client_latency_count": dict(_client_latency_count),
+        "feedback_entries": list(_feedback_entries),
     }
 
 
@@ -87,6 +97,18 @@ def _render_dashboard(snapshot: dict[str, Any]) -> str:
     client_counts = snapshot["client_counts"]
     client_latency_sum_ms = snapshot["client_latency_sum_ms"]
     client_latency_count = snapshot["client_latency_count"]
+    feedback_entries = snapshot["feedback_entries"]
+
+    feedback_count = len(feedback_entries)
+    feedback_avg = (
+        sum(item["rating"] for item in feedback_entries) / feedback_count if feedback_count else 0.0
+    )
+    feedback_rows = []
+    for entry in feedback_entries[-5:][::-1]:
+        comment = entry.get("comment") or "-"
+        scenario = entry.get("scenario") or "unknown"
+        rating = entry.get("rating", "-")
+        feedback_rows.append(f"<tr><td>{rating}</td><td>{scenario}</td><td>{comment}</td></tr>")
 
     rows_requests = []
     for (method, path, status_code), count in sorted(request_counts.items()):
@@ -212,6 +234,19 @@ def _render_dashboard(snapshot: dict[str, Any]) -> str:
           </tbody>
         </table>
       </div>
+      <div class="card">
+        <div class="pill">Feedback</div>
+        <h2>User Satisfaction</h2>
+        <p>Avg rating: <strong>{feedback_avg:.2f}</strong> • Total: <strong>{feedback_count}</strong></p>
+        <table>
+          <thead>
+            <tr><th>Rating</th><th>Scenario</th><th>Comment</th></tr>
+          </thead>
+          <tbody>
+            {''.join(feedback_rows) if feedback_rows else '<tr><td colspan="3">No feedback yet</td></tr>'}
+          </tbody>
+        </table>
+      </div>
     </section>
   </body>
 </html>
@@ -298,6 +333,27 @@ async def client_metrics(
     return {"status": "ok"}
 
 
+@app.post("/feedback")
+async def feedback(
+    payload: FeedbackPayload,
+    _: None = Depends(verify_token),
+) -> dict[str, Any]:
+    async with _metrics_lock:
+        _feedback_entries.append(payload.model_dump())
+        if len(_feedback_entries) > _feedback_limit:
+            _feedback_entries.pop(0)
+    return {"status": "ok"}
+
+
+@app.get("/feedback/summary")
+async def feedback_summary() -> dict[str, Any]:
+    async with _metrics_lock:
+        entries = list(_feedback_entries)
+    count = len(entries)
+    avg = sum(item["rating"] for item in entries) / count if count else 0.0
+    return {"count": count, "average_rating": avg}
+
+
 @app.get("/metrics")
 async def metrics(request: Request) -> Response:
     lines: list[str] = []
@@ -309,6 +365,10 @@ async def metrics(request: Request) -> Response:
     lines.append("# TYPE gateway_client_metrics_total counter")
     lines.append("# HELP gateway_client_latency_ms Client-side latency in milliseconds.")
     lines.append("# TYPE gateway_client_latency_ms summary")
+    lines.append("# HELP gateway_feedback_count Total feedback responses.")
+    lines.append("# TYPE gateway_feedback_count gauge")
+    lines.append("# HELP gateway_feedback_avg_rating Average rating from feedback (1-5).")
+    lines.append("# TYPE gateway_feedback_avg_rating gauge")
 
     async with _metrics_lock:
         snapshot = _metrics_snapshot()
@@ -332,6 +392,14 @@ async def metrics(request: Request) -> Response:
             count = snapshot["client_latency_count"][event]
             lines.append(f'gateway_client_latency_ms_sum{{event="{event}"}} {total:.3f}')
             lines.append(f'gateway_client_latency_ms_count{{event="{event}"}} {count}')
+        feedback_count = len(snapshot["feedback_entries"])
+        feedback_avg = (
+            sum(item["rating"] for item in snapshot["feedback_entries"]) / feedback_count
+            if feedback_count
+            else 0.0
+        )
+        lines.append(f"gateway_feedback_count {feedback_count}")
+        lines.append(f"gateway_feedback_avg_rating {feedback_avg:.3f}")
 
     accepts = request.headers.get("accept", "")
     if "text/html" in accepts:

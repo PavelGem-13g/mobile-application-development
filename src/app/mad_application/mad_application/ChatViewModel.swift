@@ -34,6 +34,7 @@ final class ChatViewModel: ObservableObject {
 
     func refreshModels(baseURL: String, token: String) async {
         guard let client = buildClient(baseURL: baseURL, token: token) else { return }
+        let start = Date()
         connectionState = .connecting
         errorMessage = nil
         isLoadingModels = true
@@ -47,9 +48,23 @@ final class ChatViewModel: ObservableObject {
                 selectedModelID = fetched.first?.id
             }
             connectionState = .connected
+            MetricsReporter.shared.record(
+                event: "models_fetch",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "ok",
+                baseURL: baseURL,
+                token: token
+            )
         } catch {
             connectionState = .failed(error.localizedDescription)
             errorMessage = error.localizedDescription
+            MetricsReporter.shared.record(
+                event: "models_fetch",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "error",
+                baseURL: baseURL,
+                token: token
+            )
         }
     }
 
@@ -64,6 +79,7 @@ final class ChatViewModel: ObservableObject {
         }
         guard let client = buildClient(baseURL: baseURL, token: token) else { return }
 
+        let start = Date()
         isSending = true
         errorMessage = nil
         defer { isSending = false }
@@ -72,9 +88,23 @@ final class ChatViewModel: ObservableObject {
             let response = try await client.sendChat(model: modelID, prompt: prompt)
             responseText = response.message.content
             connectionState = .connected
+            MetricsReporter.shared.record(
+                event: "chat_request",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "ok",
+                baseURL: baseURL,
+                token: token
+            )
         } catch {
             connectionState = .failed(error.localizedDescription)
             errorMessage = error.localizedDescription
+            MetricsReporter.shared.record(
+                event: "chat_request",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "error",
+                baseURL: baseURL,
+                token: token
+            )
         }
     }
 

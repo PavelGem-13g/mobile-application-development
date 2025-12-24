@@ -25,6 +25,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        recordMetric(event: "tap_refresh_models", status: "ok")
                         Task { await viewModel.refreshModels(baseURL: gatewayBaseURL, token: gatewayToken) }
                     } label: {
                         if viewModel.isLoadingModels {
@@ -39,6 +40,28 @@ struct ContentView: View {
             }
             .task {
                 await viewModel.refreshModels(baseURL: gatewayBaseURL, token: gatewayToken)
+            }
+            .onAppear {
+                recordMetric(event: "view_content_loaded", status: "ok")
+            }
+            .onChange(of: viewModel.selectedModelID) { _, newValue in
+                if newValue != nil {
+                    recordMetric(event: "model_selected", status: "ok")
+                }
+            }
+            .onChange(of: viewModel.connectionState) { _, newValue in
+                let status: String
+                switch newValue {
+                case .connected:
+                    status = "connected"
+                case .connecting:
+                    status = "connecting"
+                case .failed:
+                    status = "failed"
+                case .idle:
+                    status = "idle"
+                }
+                recordMetric(event: "connection_state", status: status)
             }
         }
     }
@@ -61,6 +84,7 @@ struct ContentView: View {
                 }
             }
             Button("Проверить соединение") {
+                recordMetric(event: "tap_check_connection", status: "ok")
                 Task { await viewModel.refreshModels(baseURL: gatewayBaseURL, token: gatewayToken) }
             }
             .buttonStyle(.borderedProminent)
@@ -91,6 +115,7 @@ struct ContentView: View {
                 .focused($promptFocused)
                 .accessibilityIdentifier("promptEditor")
             Button {
+                recordMetric(event: "tap_send_prompt", status: "ok")
                 promptFocused = false
                 Task { await viewModel.sendPrompt(baseURL: gatewayBaseURL, token: gatewayToken) }
             } label: {
@@ -129,6 +154,16 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func recordMetric(event: String, status: String) {
+        MetricsReporter.shared.record(
+            event: event,
+            durationMs: nil,
+            status: status,
+            baseURL: gatewayBaseURL,
+            token: gatewayToken
+        )
     }
 
     private var statusIcon: String {

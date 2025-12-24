@@ -20,7 +20,7 @@
 
 ### 1.3. Integration/API tests (backend)
 
-- Тестируются: контракт API, auth/pairing, корректное проксирование через VPS→WG→Home, идемпотентность/ретраи, валидация лимитов.
+- Тестируются: контракт API, auth/pairing, корректное проксирование через VPN к Ollama (10.8.1.3), идемпотентность/ретраи, валидация лимитов.
 - Инструменты: Postman/Newman, pytest, или встроенные тесты (зависит от стека backend).
 - Результат: набор сценариев, повторяемый в CI.
 
@@ -50,16 +50,11 @@
 
 - Инструмент: k6/Gatling/JMeter (выбрать один).
 - Сценарии:
-  - LT‑01: «Чат completion» (RPS, p95 latency, error rate, concurrency).
+  - LT‑01: «Чат completion» (RPS, p95 latency, error rate, concurrency) по адресу gateway 10.8.1.1.
   - LT‑02: «Streaming» (длительные соединения, обрывы, reconnect).
   - LT‑03: «List models / health check» (частые короткие запросы).
-- Метрики: p50/p95/p99 latency, error‑rate, saturation (CPU/RAM/DB).
+- Метрики: p50/p95/p99 latency, error‑rate, saturation (CPU/RAM/DB, сеть VPN).
 - Выход: отчет + графики (Grafana) + пороги алертов.
-
-Дополнительно для topology с VPS:
-
-- LT‑VPS‑01: нагрузка на публичный reverse proxy (TLS termination, streaming).
-- LT‑VPS‑02: деградация при потере WG туннеля (ошибка должна быть быстрой и понятной; без зависаний клиента).
 
 ## 4. Security checks
 

@@ -40,7 +40,7 @@
 - Dashboard‑1: Home Gateway health — RPS, error rate, p95 latency/TTFT, активные стримы.
 - Dashboard‑2: Ollama host — CPU/RAM/VRAM, температура/троттлинг (если доступно), загрузка диска.
 - Dashboard‑3: Mobile stability — crash‑free sessions, топ ошибок, TTFT по устройствам/сетям.
-- Dashboard‑4: VPS/WireGuard — handshake age, трафик, доступность edge, 4xx/5xx на публичном прокси.
+- Dashboard‑4: VPN/WireGuard — handshake age, трафик, задержки между 10.8.1.1 ↔ 10.8.1.3, количество активных клиентов.
 
 Алерты (пример):
 

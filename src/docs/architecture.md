@@ -1,40 +1,40 @@
 # Архитектура системы
 
-Цель: описать top‑level архитектуру и сетевую связность сервисов/микросервисов (требование «2 балла» из QAP) для кейса «мобильный клиент → домашний ПК с Ollama через VPS + AmneziaWG», а также внутреннюю архитектуру iOS‑клиента на базе `src/app/mad_application`.
+Цель: описать top‑level архитектуру и сетевую связность сервисов/микросервисов (требование «2 балла» из QAP) для кейса «все устройства находятся в одной VPN (10.8.1.0/24): iOS (10.8.1.2) → gateway (10.8.1.1) → Ollama (10.8.1.3)», а также внутреннюю архитектуру iOS‑клиента на базе `src/app/mad_application`. Практическая реализация gateway расположена в `src/home_gateway` (FastAPI + Docker).
 
 ## 1. Контекст (C4: System Context)
 
 ```mermaid
 flowchart LR
-  User[Пользователь] --> iOS[iOS App (SwiftUI)]
-  iOS --> VPS[VPS (public IP)]
-  VPS --> Edge[Edge Reverse Proxy\n(Caddy/Nginx)]
-  VPS --> AWG[AmneziaWG Server\n(WireGuard)]
-  Home[Домашний ПК] --> AWG
-  Edge --> GW[Home Gateway / BFF\n(через WG tunnel)]
-  GW --> Ollama[Ollama (LLM runtime)]
-  GW --> Auth[Auth / Pairing]
-  GW --> Feedback[Feedback endpoint (optional)]
-  iOS --> Analytics[Analytics SDK/Service]
-  iOS --> Crash[Crash Monitoring (Sentry/Crashlytics)]
-  GW --> OTel[OpenTelemetry Collector]
-  OTel --> Prom[Prometheus]
-  Prom --> Grafana[Grafana Dashboards]
-  OTel --> Logs[Logs (Loki/ELK)]
-  Zabbix[Zabbix] -.infra-> Prom
+  User["Пользователь"] --> iOS["iOS App (SwiftUI, 10.8.1.2)"]
+  iOS --> VPN["VPN 10.8.1.0/24"]
+  VPN --> GW["Gateway (FastAPI) 10.8.1.1"]
+  GW --> Ollama["Ollama runtime 10.8.1.3"]
+  GW --> Auth["Auth / Pairing"]
+  GW --> Feedback["Feedback endpoint (optional)"]
+  GW --> DB[("Feedback/History DB")]
+  iOS --> Analytics["Analytics SDK/Service"]
+  iOS --> Crash["Crash Monitoring (Sentry/Crashlytics)"]
+  GW --> OTel["OpenTelemetry Collector"]
+  OTel --> Prom["Prometheus"]
+  Prom --> Grafana["Grafana Dashboards"]
+  OTel --> Logs["Logs (Loki/ELK)"]
+  Zabbix["Zabbix"] -- "infra" --> Prom
 ```
 
 Примечания:
 
-- Ollama и домашний gateway не открываются в интернет: наружу публикуется только VPS (TLS), а до дома трафик идет через WireGuard (AmneziaWG).
-- Edge reverse proxy на VPS завершает TLS и проксирует трафик к домашнему gateway по WG‑интерфейсу.
+- Все узлы общаются напрямую внутри VPN 10.8.1.0/24 — нет публичного VPS/прокси.
+- Gateway (10.8.1.1) и Ollama (10.8.1.3) не доступны извне без подключения к VPN.
+- Эндпоинт Ollama на `http://10.8.1.3:11434/` отвечает «Ollama is running», что подтверждает доступность сервиса из VPN.
 - Для учебного проекта допускается замена `Analytics/Crash` на SaaS‑решение; важно, чтобы выбранный инструмент и метрики были явно зафиксированы.
+- База данных может использоваться для хранения feedback и истории запросов; если не разворачивается, компонент отмечается как optional.
 
 ## 2. Контейнеры (C4: Containers) и протоколы
 
-- iOS App → VPS Edge: HTTPS + TLS; streaming (SSE/WebSocket) при необходимости.
-- VPS Edge → Home Gateway: HTTP(S) поверх WireGuard tunnel (WG интерфейс); доступ ограничен firewall'ом.
-- Home Gateway → Ollama: HTTP (loopback/локальная сеть на домашнем ПК).
+- iOS App → Gateway (10.8.1.1): HTTPS/HTTP внутри VPN; поддержка streaming (SSE/WebSocket) при необходимости.
+- Gateway → Ollama (10.8.1.3): HTTP внутри VPN.
+- Gateway → DB: TCP (PostgreSQL/SQLite), только внутри VPN.
 - Home Gateway → Observability: OTLP (gRPC/HTTP) в OpenTelemetry Collector.
 - Prometheus → Home Gateway: pull‑scrape `/metrics` (или через collector).
 
@@ -44,24 +44,24 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph Presentation[Presentation]
-    View[SwiftUI View] --> VM[ViewModel]
+  subgraph Presentation["Presentation"]
+    View["SwiftUI View"] --> VM["ViewModel"]
   end
 
-  subgraph Domain[Domain]
-    UC[UseCase] --> Ent[Entities]
+  subgraph Domain["Domain"]
+    UC["UseCase"] --> Ent["Entities"]
   end
 
-  subgraph Data[Data]
-    Repo[Repository] --> Remote[Remote Data Source]
-    Repo --> Local[Local Data Source]
+  subgraph Data["Data"]
+    Repo["Repository"] --> Remote["Remote Data Source"]
+    Repo --> Local["Local Data Source"]
   end
 
   VM --> UC
   UC --> Repo
-  Remote --> Net[Networking (URLSession)]
-  Local --> Store[Persistence (CoreData/FileCache)]
-  VM --> Telemetry[Analytics/Tracing]
+  Remote --> Net["Networking (URLSession)"]
+  Local --> Store["Persistence (CoreData/FileCache)"]
+  VM --> Telemetry["Analytics/Tracing"]
 ```
 
 Ключевые принципы:
@@ -106,36 +106,31 @@ sequenceDiagram
 
 ## 5. Развертывание (вариант для «2 балла»)
 
-Вариант с контейнерами на домашнем ПК (учебный стенд), показывающий сетевую связность:
+Вариант с контейнерами/службами в одной VPN:
 
 ```mermaid
 flowchart LR
-  subgraph VPS[VPS (Docker)]
-    Edge[edge-proxy (caddy/nginx)]
-    AWG[amnezia-wg (server)]
-    OTelV[otel-collector (optional)]
-    Prom[prometheus]
-    Graf[grafana]
-    Loki[loki]
-  end
-
-  subgraph Home[Home PC]
-    BFF[home-gateway]
-    Auth[auth/pairing]
-    Ollama[ollama]
-    FB[feedback (optional)]
+  subgraph VPNNet["VPN 10.8.1.0/24"]
+    BFF["Gateway (10.8.1.1)"]
+    Auth["auth/pairing"]
+    Ollama["ollama (10.8.1.3)"]
+    FB["feedback (optional)"]
+    DB[("feedback/history db")]
+    OTel["otel-collector"]
+    Prom["prometheus"]
+    Graf["grafana"]
+    Loki["loki"]
   end
 
   BFF --> Auth
   BFF --> Ollama
   BFF --> FB
-  BFF --> OTelV
-  Auth --> OTelV
-  FB --> OTelV
-  Edge --> BFF
-  AWG --- BFF
+  BFF --> DB
+  BFF --> OTel
+  Auth --> OTel
+  FB --> OTel
   Prom --> Graf
-  OTelV --> Loki
+  OTel --> Loki
 ```
 
 Даже если фактически часть компонентов не разворачивается, эта схема демонстрирует понимание сетевой топологии и observability.

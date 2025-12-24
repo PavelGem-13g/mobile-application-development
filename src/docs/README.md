@@ -11,4 +11,10 @@
 - `src/docs/testing_strategy.md` — модель тестирования (в т.ч. UI automation, performance, load).
 - `src/docs/metrics_monitoring_feedback.md` — метрики надежности/качества, мониторинг, сбор обратной связи (CSI/NPS).
 
+Помимо документов в `src/docs`, артефакты реализации располагаются здесь же (папка `/src`):
+
+- `src/home_gateway` — FastAPI gateway (Dockerfile, requirements, README).
+- `src/docker-compose.yml` — пример сборки домашнего gateway.
+- `src/app/mad_application` — iOS клиент с экраном подключения и чата.
+
 Примечание: документы ориентированы на демонстрацию качества (QAP): top-level архитектура с сетью сервисов, модель тестирования (включая UI automation и performance), метрики/мониторинг и сбор feedback.

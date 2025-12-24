@@ -15,6 +15,8 @@
 - Скриншот: `src/docs/images/autotests/complete_all_tests.png`.
 - Видео на устройстве: `src/docs/images/autotests/device_test.MP4`.
 
+![UI автотесты](images/autotests/complete_all_tests.png)
+
 ## 3. Метрики (Measure quantitative metrics)
 
 ### 3.1. Клиент
@@ -30,6 +32,10 @@
 - Grafana provisioning: `src/grafana/provisioning/`.
 - Скриншоты: `src/docs/images/dashboard/Prometheus.png`, `src/docs/images/dashboard/Grafana.png`, `src/docs/images/dashboard/Metrics.png`.
 
+![Prometheus](images/dashboard/Prometheus.png)
+![Grafana](images/dashboard/Grafana.png)
+![Gateway dashboard](images/dashboard/Metrics.png)
+
 ## 4. Feedback (Collect user feedback)
 
 - Prompt показывается после ответа на промпт с задержкой 10 секунд.
@@ -38,13 +44,10 @@
 - Gateway: `POST /feedback`, `GET /feedback/summary`, метрики `gateway_feedback_*`.
 - Скриншоты: `src/docs/images/feedback/user_satisfaction.png`, `src/docs/images/feedback/device_satisfaction.PNG`.
 
-## 5. Запуск мониторинга
+![Feedback prompt](images/feedback/user_satisfaction.png)
+![Feedback on device](images/feedback/device_satisfaction.PNG)
 
-```sh
-cd /Users/pavel/Git/mobile-application-development/src
-docker compose up -d --build
-```
+## 5. Запуск на устройстве (Productivity)
 
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (admin/admin)
-- Gateway dashboard: `http://localhost:8000/dashboard`
+- Приложение запускается на реальном устройстве (демо‑видео).
+- Артефакт: `src/docs/images/productivity/usecase.MP4`.

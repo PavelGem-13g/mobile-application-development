@@ -11,13 +11,13 @@ flowchart LR
   VPN --> GW["Gateway (FastAPI) 10.8.1.1"]
   GW --> Ollama["Ollama runtime 10.8.1.3"]
   GW --> Auth["Auth / Pairing"]
-  GW --> Feedback["Feedback endpoint (optional)"]
+  GW --> Feedback["Feedback endpoint (/feedback)"]
   GW --> DB[("Feedback/History DB")]
   iOS --> Analytics["Analytics SDK/Service"]
   iOS --> Crash["Crash Monitoring (Sentry/Crashlytics)"]
-  GW --> OTel["OpenTelemetry Collector"]
-  OTel --> Prom["Prometheus"]
+  GW --> Prom["Prometheus (/metrics)"]
   Prom --> Grafana["Grafana Dashboards"]
+  GW --> Dash["HTML Dashboard (/dashboard)"]
   OTel --> Logs["Logs (Loki/ELK)"]
   Zabbix["Zabbix"] -- "infra" --> Prom
 ```
@@ -35,8 +35,9 @@ flowchart LR
 - iOS App → Gateway (10.8.1.1): HTTPS/HTTP внутри VPN; поддержка streaming (SSE/WebSocket) при необходимости.
 - Gateway → Ollama (10.8.1.3): HTTP внутри VPN.
 - Gateway → DB: TCP (PostgreSQL/SQLite), только внутри VPN.
-- Home Gateway → Observability: OTLP (gRPC/HTTP) в OpenTelemetry Collector.
-- Prometheus → Home Gateway: pull‑scrape `/metrics` (или через collector).
+- Home Gateway → Observability: HTTP `/metrics` для Prometheus.
+- Prometheus → Home Gateway: pull‑scrape `/metrics`.
+- Human‑friendly dashboard: `/dashboard` в gateway.
 
 ## 3. Внутренняя архитектура iOS‑клиента (слои)
 
@@ -116,7 +117,6 @@ flowchart LR
     Ollama["ollama (10.8.1.3)"]
     FB["feedback (optional)"]
     DB[("feedback/history db")]
-    OTel["otel-collector"]
     Prom["prometheus"]
     Graf["grafana"]
     Loki["loki"]
@@ -126,11 +126,15 @@ flowchart LR
   BFF --> Ollama
   BFF --> FB
   BFF --> DB
-  BFF --> OTel
-  Auth --> OTel
-  FB --> OTel
+  BFF --> Prom
   Prom --> Graf
-  OTel --> Loki
+  BFF --> Loki
 ```
 
 Даже если фактически часть компонентов не разворачивается, эта схема демонстрирует понимание сетевой топологии и observability.
+
+## 6. Доказательства (скриншоты)
+
+- Prometheus: `src/docs/images/dashboard/Prometheus.png`
+- Grafana: `src/docs/images/dashboard/Grafana.png`
+- Метрики gateway: `src/docs/images/dashboard/Metrics.png`

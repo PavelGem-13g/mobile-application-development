@@ -6,49 +6,45 @@
 
 ### 1.1. Unit tests (клиент)
 
-- Тестируются: use‑cases, маппинг ошибок, форматирование, валидация, политики кэша.
-- Инструменты: Swift Testing (`import Testing`) или XCTest (выбрать один стандарт).
-- Цель: быстрое покрытие доменной логики без сети/UI.
+- Реализация: `src/app/mad_application/mad_applicationTests/mad_applicationTests.swift`.
+- Покрыто: маппинг HTTP ошибок (`HTTPErrorMapper`).
+- Инструмент: Swift Testing (`import Testing`).
 
 ### 1.2. UI automation tests (клиент) — требование на «2 балла»
 
-- Тестируются: критические happy‑path сценарии (UC‑01..UC‑05) и базовые ошибки.
-- Инструменты: XCUITest (`mad_applicationUITests` уже есть в проекте).
-- Требования:
-  - Запуск тестов на CI/локально без ручных шагов.
-  - Stable selectors (accessibility identifiers) для элементов UI.
+- Реализация: `src/app/mad_application/mad_applicationUITests/mad_applicationUITests.swift`.
+- Сценарии: happy‑path, валидация пустого промпта, performance refresh models.
+- Используются стабильные accessibility identifiers.
+- Скриншот: `src/docs/images/autotests/complete_all_tests.png`.
+- Видео на устройстве: `src/docs/images/autotests/device_test.MP4`.
 
 ### 1.3. Integration/API tests (backend)
 
-- Тестируются: контракт API, auth/pairing, корректное проксирование через VPN к Ollama (10.8.1.3), идемпотентность/ретраи, валидация лимитов.
-- Инструменты: Postman/Newman, pytest, или встроенные тесты (зависит от стека backend).
-- Результат: набор сценариев, повторяемый в CI.
+- Статус: не реализовано; предусмотрены endpoint’ы `/health`, `/models`, `/chat`, `/metrics`.
 
 ### 1.4. Usability tests (ручные)
 
-- Метод: 5‑секундный тест для первого экрана + «think‑aloud» для UC‑02/UC‑04 (подключение и чат).
-- Артефакты: сценарий теста, чек‑лист наблюдений, выводы и изменения UX.
+- Метод: 5‑секундный тест первого экрана + «think‑aloud» для UC‑02/UC‑04.
+- Артефакты: feedback prompt (см. `src/docs/images/feedback/user_satisfaction.png`).
 
 ## 2. Performance testing (клиент) — требование на «2 балла»
 
 ### 2.1. Измерения на iOS
 
-- Cold start: `XCTApplicationLaunchMetric()` (уже есть шаблонный тест `testLaunchPerformance()`).
-- Метрики LLM: TTFT (time-to-first-token) и время полного ответа для UC‑04, включая случаи VPN/4G.
-- Streaming UI: измерить «время до появления первого фрагмента текста» и smoothness скролла (без фризов UI).
-- Инструменты: XCTest Metrics + Instruments (Time Profiler, Network, Leaks).
+- Cold start: `XCTApplicationLaunchMetric()` в `mad_applicationUITests.swift`.
+- Performance refresh models: `XCTClockMetric()` в UI тестах.
+- Метрики чата и моделей собираются на gateway (`/metrics`) и клиентом (`/client-metrics`).
 
 ### 2.2. Performance acceptance criteria (пример)
 
-- p95 TTFT при 4G/VPN ≤ X секунд (X фиксируется после базового измерения).
-- p95 полного ответа при 4G/VPN ≤ Y секунд (Y фиксируется после базового измерения).
-- Cold start p95 ≤ Y секунд (Y фиксируется после измерения на целевом устройстве).
+- p95 latency `/chat` ≤ X секунд (X фиксируется после базового измерения).
+- Cold start p95 ≤ Y секунд.
 
 ## 3. Load testing (backend) — желательно для «идеально»
 
 Цель: показать понимание нагрузки и измеримость.
 
-- Инструмент: k6/Gatling/JMeter (выбрать один).
+- Инструмент: k6/Gatling/JMeter (планируется).
 - Сценарии:
   - LT‑01: «Чат completion» (RPS, p95 latency, error rate, concurrency) по адресу gateway 10.8.1.1.
   - LT‑02: «Streaming» (длительные соединения, обрывы, reconnect).
@@ -60,7 +56,7 @@
 
 - Чек‑лист: OWASP MASVS L1 (как минимум: хранение секретов, сеть, логирование, jailbreak/root assumptions).
 - Практика:
-  - Проверка, что токены в Keychain.
+- Проверка: токены пока хранятся в `AppStorage` (запланировано перенести в Keychain).
   - Проверка, что нет PII/токенов в логах.
   - Проверка ATS/HTTPS.
   - Проверка, что Ollama не доступна напрямую из интернета (только LAN/через gateway/VPN).

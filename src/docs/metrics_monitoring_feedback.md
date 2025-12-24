@@ -1,6 +1,6 @@
 # Метрики, мониторинг и обратная связь
 
-Цель: выполнить QAP пункты про (1) количественные метрики, (2) ключевую метрику надежности и инструмент мониторинга, (3) сбор feedback (CSI/NPS) с периодическим prompt.
+Цель: выполнить QAP пункты про (1) количественные метрики, (2) ключевую метрику надежности и инструмент мониторинга, (3) сбор feedback (CSI/NPS) с prompt после завершения сценария.
 
 ## 1. Ключевые метрики (KPI/SLI)
 
@@ -8,41 +8,38 @@
 
 Выбрать 1 «ключевую» (для self-check) и 2–3 вспомогательных:
 
-- Key metric (пример): **Crash‑free sessions (%)** для iOS клиента.
+- Key metric (MVP): **Success rate запросов чата** (`gateway_http_requests_total` по `/chat`).
 - Вспомогательные:
   - API error rate (5xx/4xx/429) по endpoint’ам gateway.
-  - p95 TTFT и p95 полного ответа по UC‑04 (чат).
-  - Доля успешных завершений ключевого сценария (success rate UC‑04).
-  - Доля отмен (cancel rate) и повторов (retry rate).
-  - WireGuard tunnel health: uptime, handshake age, packet loss/latency (если доступно).
+  - Средняя задержка `/models` и `/chat` (latency ms).
+  - Доля успешных завершений ключевого сценария (chat_request ok).
+  - Длительность сессии клиента (event `session_duration`).
 
-Инструменты мониторинга (примерный набор):
+Инструменты мониторинга (факт реализации):
 
-- Для клиента: Sentry или Firebase Crashlytics (crashes, non‑fatal errors).
-- Для backend/инфры: Prometheus + Grafana (метрики), Loki/ELK (логи), OpenTelemetry (трейсы).
-- Альтернатива/дополнение: Zabbix для инфраструктурных метрик и алертов.
+- Для клиента: отправка событий и метрик на gateway (`/client-metrics`).
+- Для backend/инфры: Prometheus + Grafana (метрики), HTML dashboard `/dashboard` для быстрой проверки.
+- Альтернатива/дополнение: Zabbix для инфраструктурных метрик и алертов (не развернут).
 
 ### 1.2. Производительность
 
-- Cold start p50/p95.
-- TTFT (p50/p95) и полное время ответа (p50/p95) в чате.
-- Размер ответов API и объем трафика за сессию.
+- Cold start измеряется в UI/perf тестах.
+- Время ответа `/models` и `/chat` фиксируется gateway и клиентом (`models_fetch`, `chat_request`).
+- Длительность сессии (`session_duration`) и частота действий (тапы).
 
 ### 1.3. UX/продукт
 
-- Retention D1/D7 (если есть аналитика).
-- Session length.
-- Конверсия в «успешное завершение сценария».
-- CSI/NPS по сценариям.
+- Session length (event `session_duration`).
+- Конверсия в «успешное завершение сценария» (`chat_request` status).
+- CSI 1–5 по сценарию `chat_completed`.
 
-## 2. Дашборды и алерты (минимум)
+## 2. Дашборды и визуализация
 
-- Dashboard‑1: Home Gateway health — RPS, error rate, p95 latency/TTFT, активные стримы.
-- Dashboard‑2: Ollama host — CPU/RAM/VRAM, температура/троттлинг (если доступно), загрузка диска.
-- Dashboard‑3: Mobile stability — crash‑free sessions, топ ошибок, TTFT по устройствам/сетям.
-- Dashboard‑4: VPN/WireGuard — handshake age, трафик, задержки между 10.8.1.1 ↔ 10.8.1.3, количество активных клиентов.
+- Dashboard‑1 (Grafana): RPS, средняя latency, client‑events, feedback (см. `src/docs/images/dashboard/Grafana.png`).
+- Dashboard‑2 (Prometheus): live‑query метрик gateway (см. `src/docs/images/dashboard/Prometheus.png`).
+- Dashboard‑3 (HTML): быстрый overview на `/dashboard` (см. `src/docs/images/dashboard/Metrics.png`).
 
-Алерты (пример):
+Алерты (пример, для Prometheus/Grafana):
 
 - Error rate > T% за 5 минут.
 - p95 TTFT > X ms за 10 минут.
@@ -54,20 +51,20 @@
 
 ### 3.1. Каналы
 
-- Кнопка «Обратная связь» (минимум для 1 балла).
-- Периодический prompt (для 2 баллов): показывать после завершения ключевого сценария.
+- Prompt после завершения ключевого сценария (chat) с задержкой 10 секунд.
+- UI‑форма: оценка 1–5 + комментарий (см. `src/docs/images/feedback/user_satisfaction.png`).
 
-### 3.2. Правила показа prompt (рекомендации)
+### 3.2. Правила показа prompt (факт реализации)
 
-- Не чаще 1 раза в N дней (rate‑limit).
-- Не показывать, если пользователь уже ответил в текущем релизе.
-- Не показывать, если в текущей сессии был crash/критическая ошибка (избежать раздражения).
+- Показывается после получения ответа (по событию `responseText`).
+- Задержка 10 секунд перед показом.
+- Ограничений по частоте нет (можно добавить при необходимости).
 
 ### 3.3. Что сохранять (privacy-friendly)
 
-- Оценка (NPS 0–10 или CSI 1–5), опциональный комментарий.
-- Контекст: версия приложения, OS, экран/сценарий, timestamp.
-- Не сохранять PII без необходимости.
+- Оценка (CSI 1–5) + комментарий (опционально).
+- Контекст: сценарий (`chat_completed`), timestamp.
+- PII не сохраняются.
 
 ## 4. Процесс улучшений (замкнутый цикл)
 
@@ -75,6 +72,14 @@
 
 Артефакты для защиты/оценки:
 
-- Скриншоты дашбордов (Grafana/Crash tool).
+- Скриншоты дашбордов (Grafana/Prometheus/HTML).
 - Пример алерта и его разбор.
 - Короткий отчет «до/после» по 1–2 метрикам.
+
+## 5. Реализация (endpoint’ы)
+
+- `POST /client-metrics` — события и метрики клиента (тапы, session_duration, chat_request).
+- `POST /feedback` — оценки 1–5 + комментарий.
+- `GET /feedback/summary` — агрегаты (avg, count).
+- `GET /metrics` — Prometheus scrape.
+- `GET /dashboard` — HTML‑дашборд.

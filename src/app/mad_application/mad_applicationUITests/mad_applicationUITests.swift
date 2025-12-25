@@ -18,8 +18,9 @@ final class mad_applicationUITests: XCTestCase {
         app.launchEnvironment = ["UITEST_MOCK": "1"]
         app.launch()
 
-        let statusLabel = app.staticTexts["connectionStatusLabel"]
-        XCTAssertTrue(waitForLabel(statusLabel, equals: "Подключено",timeout: 10))
+        let modelPicker = app.buttons["modelPicker"]
+        XCTAssertTrue(modelPicker.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForLabelNotEqual(modelPicker, notEquals: "Выбрать модель", timeout: 10))
 
         let promptEditor = app.textViews["promptEditor"]
         XCTAssertTrue(promptEditor.waitForExistence(timeout: 10))
@@ -32,7 +33,7 @@ final class mad_applicationUITests: XCTestCase {
 
         let responseText = app.staticTexts["responseText"]
         XCTAssertTrue(responseText.waitForExistence(timeout: 10))
-        XCTAssertTrue(responseText.label.contains("Mock response"))
+        XCTAssertTrue(waitForLabelContains(responseText, contains: "Mock response", timeout: 10))
     }
 
     @MainActor
@@ -41,8 +42,9 @@ final class mad_applicationUITests: XCTestCase {
         app.launchEnvironment = ["UITEST_MOCK": "1"]
         app.launch()
 
-        let statusLabel = app.staticTexts["connectionStatusLabel"]
-        XCTAssertTrue(waitForLabel(statusLabel, equals: "Подключено", timeout: 10))
+        let modelPicker = app.buttons["modelPicker"]
+        XCTAssertTrue(modelPicker.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForLabelNotEqual(modelPicker, notEquals: "Выбрать модель", timeout: 10))
 
         let sendButton = app.buttons["sendPromptButton"]
         XCTAssertTrue(sendButton.waitForExistence(timeout: 10))
@@ -64,6 +66,20 @@ final class mad_applicationUITests: XCTestCase {
 
     private func waitForLabel(_ element: XCUIElement, equals value: String, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "label == %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        let waiter = XCTWaiter()
+        return waiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForLabelContains(_ element: XCUIElement, contains value: String, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", value)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        let waiter = XCTWaiter()
+        return waiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForLabelNotEqual(_ element: XCUIElement, notEquals value: String, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "label != %@", value)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         let waiter = XCTWaiter()
         return waiter.wait(for: [expectation], timeout: timeout) == .completed

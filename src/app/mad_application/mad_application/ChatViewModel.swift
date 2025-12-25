@@ -116,4 +116,48 @@ final class ChatViewModel: ObservableObject {
         }
         return LLMClient(baseURL: url, token: token)
     }
+
+    func sendPromptStream(
+        baseURL: String,
+        token: String,
+        modelID: String,
+        prompt: String,
+        onChunk: @escaping (String) -> Void
+    ) async {
+        guard let client = buildClient(baseURL: baseURL, token: token) else { return }
+
+        let start = Date()
+        isSending = true
+        errorMessage = nil
+        responseText = ""
+        defer { isSending = false }
+
+        do {
+            var aggregated = ""
+            let stream = try await client.streamChat(model: modelID, prompt: prompt)
+            for try await chunk in stream {
+                aggregated += chunk
+                onChunk(aggregated)
+            }
+            responseText = aggregated
+            connectionState = .connected
+            MetricsReporter.shared.record(
+                event: "chat_request",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "ok",
+                baseURL: baseURL,
+                token: token
+            )
+        } catch {
+            connectionState = .failed(error.localizedDescription)
+            errorMessage = error.localizedDescription
+            MetricsReporter.shared.record(
+                event: "chat_request",
+                durationMs: Date().timeIntervalSince(start) * 1000,
+                status: "error",
+                baseURL: baseURL,
+                token: token
+            )
+        }
+    }
 }

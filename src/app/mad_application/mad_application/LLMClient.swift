@@ -90,6 +90,53 @@ struct LLMClient {
         return try JSONDecoder().decode(ChatResponse.self, from: data)
     }
 
+    func streamChat(model: String, prompt: String) async throws -> AsyncThrowingStream<String, Error> {
+        if Self.isUITestMockEnabled {
+            let response = "Mock response: \(prompt)"
+            return AsyncThrowingStream { continuation in
+                Task {
+                    for word in response.split(separator: " ") {
+                        if Self.uiTestDelayNanos > 0 {
+                            try? await Task.sleep(nanoseconds: Self.uiTestDelayNanos)
+                        }
+                        continuation.yield(String(word) + " ")
+                    }
+                    continuation.finish()
+                }
+            }
+        }
+
+        let payload = ChatGatewayRequest(model: model, prompt: prompt, stream: true)
+        let request = try buildRequest(path: "chat", method: "POST", body: payload)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        if let httpResponse = response as? HTTPURLResponse, (400 ... 599).contains(httpResponse.statusCode) {
+            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "Server error \(httpResponse.statusCode)"])
+        }
+
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await line in bytes.lines {
+                        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty { continue }
+                        let cleaned = trimmed.hasPrefix("data: ") ? String(trimmed.dropFirst(6)) : trimmed
+                        guard let data = cleaned.data(using: .utf8) else { continue }
+                        let decoded = try JSONDecoder().decode(ChatResponse.self, from: data)
+                        if !decoded.message.content.isEmpty {
+                            continuation.yield(decoded.message.content)
+                        }
+                        if decoded.done {
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     private func buildRequest<T: Encodable>(path: String, method: String, body: T?) throws -> URLRequest {
         let endpoint = baseURL.appendingPathComponent(path)
         var request = URLRequest(url: endpoint)
